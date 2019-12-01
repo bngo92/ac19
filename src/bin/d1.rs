@@ -103,5 +103,8 @@ pub fn input() -> Vec<i32> {
 112848
 139027
 108208";
-    input.split_whitespace().map(|s| s.parse().unwrap()).collect()
+    input
+        .split_whitespace()
+        .map(|s| s.parse().unwrap())
+        .collect()
 }

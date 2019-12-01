@@ -1,23 +1,29 @@
 mod d1;
 
 fn main() {
-    println!("{}", part2(14));
-    println!("{}", part2(1969));
-    println!("{}", part2(100756));
-    let i: i32 = d1::input().into_iter().map(part2).sum();
+    println!("{}", S { state: 14 }.sum::<i32>());
+    println!("{}", S { state: 1969 }.sum::<i32>());
+    println!("{}", S { state: 100756 }.sum::<i32>());
+    let i: i32 = d1::input()
+        .into_iter()
+        .map(|s| S { state: s }.sum::<i32>())
+        .sum();
     println!("{}", i);
 }
 
-fn part2(i: i32) -> i32 {
-    let mut i = i;
-    let mut acc = 0;
-    loop {
-        let fuel = d1::d1(i);
-        if fuel <= 0 {
-            break
+struct S {
+    state: i32,
+}
+
+impl Iterator for S {
+    type Item = i32;
+
+    fn next(&mut self) -> Option<i32> {
+        self.state = d1::d1(self.state);
+        if self.state > 0 {
+            Some(self.state)
+        } else {
+            None
         }
-        acc += fuel;
-        i = fuel;
     }
-    acc
 }
