@@ -1,3 +1,42 @@
+use std::env;
+
+fn main() {
+    let args: Vec<_> = env::args().collect();
+    if args[1] == "p1" {
+        println!("{}", d1(12));
+        println!("{}", d1(14));
+        println!("{}", d1(1969));
+        println!("{}", d1(100756));
+        let i: i32 = input().into_iter().map(d1).sum();
+        println!("{}", i);
+    } else if args[1] == "p2" {
+        println!("{}", S { state: 14 }.sum::<i32>());
+        println!("{}", S { state: 1969 }.sum::<i32>());
+        println!("{}", S { state: 100756 }.sum::<i32>());
+        let i: i32 = input()
+            .into_iter()
+            .map(|s| S { state: s }.sum::<i32>())
+            .sum();
+        println!("{}", i);
+    }
+}
+
+struct S {
+    state: i32,
+}
+
+impl Iterator for S {
+    type Item = i32;
+
+    fn next(&mut self) -> Option<i32> {
+        self.state = d1(self.state);
+        if self.state > 0 {
+            Some(self.state)
+        } else {
+            None
+        }
+    }
+}
 pub fn d1(input: i32) -> i32 {
     input / 3 - 2
 }
