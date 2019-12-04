@@ -1,4 +1,3 @@
-use std::collections::{HashMap, HashSet};
 use std::env;
 
 fn main() {
@@ -41,63 +40,152 @@ fn main() {
 }
 
 fn p1(s1: &str, s2: &str) -> i32 {
-    day3(s1)
-        .keys()
-        .collect::<HashSet<_>>()
-        .intersection(&day3(s2).keys().collect::<HashSet<_>>())
-        .map(|(x, y)| x.abs() + y.abs())
+    let s1_lines = day3(s1);
+    let s2_lines = day3(s2);
+    s1_lines
+        .iter()
+        .flat_map(|l1| {
+            let l1 = l1.clone();
+            s2_lines.iter().filter_map(move |l2| intersection(&l1, &l2))
+        })
+        .map(|t| t.0.abs() + t.1.abs())
         .min()
         .unwrap()
 }
 
 fn p2(s1: &str, s2: &str) -> i32 {
-    let m1 = day3(s1);
-    let m2 = day3(s2);
-    let m1_keys: HashSet<_> = m1.keys().collect();
-    let m2_keys: HashSet<_> = m2.keys().collect();
-    let crosses: HashSet<_> = m1_keys.intersection(&m2_keys).collect();
-    crosses
+    let s1_lines = day3(s1);
+    let s2_lines = day3(s2);
+    s1_lines
         .iter()
-        .map(|t| m1.get(t).unwrap() + m2.get(t).unwrap())
+        .flat_map(|l1| {
+            let l1 = l1.clone();
+            s2_lines.iter().filter_map(move |l2| intersection(&l1, &l2))
+        })
+        .map(|t| t.2)
         .min()
         .unwrap()
 }
 
-fn day3(input: &str) -> HashMap<(i32, i32), i32> {
-    let mut pos = (0, 0);
-    let mut current_steps = 0;
-    let mut acc = HashMap::new();
-    for step in input.split(',') {
-        let dir = step.as_bytes()[0] as char;
-        let steps = &step[1..].parse::<i32>().unwrap();
-        for (k, v) in d3(pos, dir, *steps, current_steps) {
-            pos = k;
-            current_steps = v;
-            acc.entry(k).or_insert(v);
-        }
-    }
-    acc
+fn day3(input: &str) -> Vec<Line> {
+    input
+        .split(',')
+        .fold(
+            ((0, 0), 0, Vec::new()),
+            |(pos, current_steps, mut acc), step| {
+                let dir = step.as_bytes()[0] as char;
+                let steps = &step[1..].parse::<i32>().unwrap();
+                let (pos, l) = match dir {
+                    'U' => {
+                        let y_end = pos.1 + steps;
+                        (
+                            (pos.0, y_end),
+                            Line::Vertical {
+                                x: pos.0,
+                                y_start: pos.1,
+                                y_end,
+                                start: current_steps,
+                            },
+                        )
+                    }
+                    'R' => {
+                        let x_end = pos.0 + steps;
+                        (
+                            (x_end, pos.1),
+                            Line::Horizontal {
+                                x_start: pos.0,
+                                x_end,
+                                y: pos.1,
+                                start: current_steps,
+                            },
+                        )
+                    }
+                    'D' => {
+                        let y_end = pos.1 - steps;
+                        (
+                            (pos.0, y_end),
+                            Line::Vertical {
+                                x: pos.0,
+                                y_start: pos.1,
+                                y_end,
+                                start: current_steps,
+                            },
+                        )
+                    }
+                    'L' => {
+                        let x_end = pos.0 - steps;
+                        (
+                            (x_end, pos.1),
+                            Line::Horizontal {
+                                x_start: pos.0,
+                                x_end,
+                                y: pos.1,
+                                start: current_steps,
+                            },
+                        )
+                    }
+                    _ => panic!(),
+                };
+                acc.push(l);
+                (pos, current_steps + steps, acc)
+            },
+        )
+        .2
 }
 
-pub fn d3(
-    mut input: (i32, i32),
-    dir: char,
-    steps: i32,
-    mut current_steps: i32,
-) -> Vec<((i32, i32), i32)> {
-    let (dx, dy) = match dir {
-        'U' => (0, 1),
-        'R' => (1, 0),
-        'D' => (0, -1),
-        'L' => (-1, 0),
-        _ => panic!(),
-    };
-    let mut acc = Vec::new();
-    for _ in 0..steps {
-        input.0 += dx;
-        input.1 += dy;
-        current_steps += 1;
-        acc.push((input, current_steps));
+enum Line {
+    Vertical {
+        x: i32,
+        y_start: i32,
+        y_end: i32,
+        start: i32,
+    },
+    Horizontal {
+        x_start: i32,
+        x_end: i32,
+        y: i32,
+        start: i32,
+    },
+}
+
+fn intersection(l1: &Line, l2: &Line) -> Option<(i32, i32, i32)> {
+    match (l1, l2) {
+        (
+            &Line::Vertical {
+                x,
+                y_start,
+                y_end,
+                start: start1,
+            },
+            &Line::Horizontal {
+                x_start,
+                x_end,
+                y,
+                start: start2,
+            },
+        )
+        | (
+            &Line::Horizontal {
+                x_start,
+                x_end,
+                y,
+                start: start1,
+            },
+            &Line::Vertical {
+                x,
+                y_start,
+                y_end,
+                start: start2,
+            },
+        ) if contains(x_start, x, x_end) && contains(y_start, y, y_end) => Some((
+            x,
+            y,
+            (x - x_start).abs() + (y - y_start).abs() + start1 + start2,
+        )),
+        _ => None,
     }
-    acc
+}
+
+fn contains(start: i32, i: i32, end: i32) -> bool {
+    (start < i && i <= end) || (end <= i && i < start)
 }
