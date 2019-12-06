@@ -8,8 +8,14 @@ fn main() {
             "{}",
             (172930..683082)
                 .map(|i| i.to_string())
-                .filter(|s| Pairwise::from_iter(&mut s.bytes()).all(|(c1, c2)| c1 <= c2))
-                .filter(|s| Pairwise::from_iter(&mut s.bytes()).any(|(c1, c2)| c1 == c2))
+                .filter(|s| s.as_bytes().windows(2).all(|s| match s {
+                    [c1, c2] => c1 <= c2,
+                    _ => panic!(),
+                }))
+                .filter(|s| s.as_bytes().windows(2).any(|s| match s {
+                    [c1, c2] => c1 == c2,
+                    _ => panic!(),
+                }))
                 .count()
         );
     } else if args[1] == "p2" {
@@ -17,7 +23,10 @@ fn main() {
             "{}",
             (172930..683082)
                 .map(|i| i.to_string())
-                .filter(|s| Pairwise::from_iter(&mut s.bytes()).all(|(c1, c2)| c1 <= c2))
+                .filter(|s| s.as_bytes().windows(2).all(|s| match s {
+                    [c1, c2] => c1 <= c2,
+                    _ => panic!(),
+                }))
                 .filter(|s| {
                     let mut counts = HashMap::new();
                     s.bytes().for_each(|c| {
@@ -27,28 +36,5 @@ fn main() {
                 })
                 .count()
         );
-    }
-}
-
-struct Pairwise<'a> {
-    iter: &'a mut dyn Iterator<Item = u8>,
-    state: u8,
-}
-
-impl Pairwise<'_> {
-    fn from_iter(iter: &'_ mut dyn Iterator<Item = u8>) -> Pairwise {
-        let state = iter.next().unwrap();
-        Pairwise { iter, state }
-    }
-}
-
-impl Iterator for Pairwise<'_> {
-    type Item = (u8, u8);
-
-    fn next(&mut self) -> Option<Self::Item> {
-        let next = self.iter.next()?;
-        let curr = self.state;
-        self.state = next;
-        Some((curr, next))
     }
 }
