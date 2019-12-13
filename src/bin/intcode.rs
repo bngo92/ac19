@@ -1,115 +1,139 @@
 #![feature(slice_patterns)]
 
-use std::collections::VecDeque;
 use std::iter;
+use std::sync::mpsc::{Receiver, Sender};
 
 fn main() {}
 
-pub fn run_intcode(program: Vec<i32>, mut input: VecDeque<i32>) -> (Vec<i32>, VecDeque<i32>) {
-    let mut output = VecDeque::new();
-    (
-        iter::successors(Some((program, 0)), |(program, ip)| {
-            match process_opcode(&program, *ip, &mut input, &mut output) {
-                OpcodeResult::Next(t) => Some(t),
-                OpcodeResult::Halt => None,
-                _ => panic!(),
-            }
-        })
-        .last()
-        .unwrap()
-        .0,
-        output,
-    )
-}
-
-pub enum OpcodeResult {
-    Next((Vec<i32>, usize)),
-    Halt,
-    Blocked,
+pub fn run_intcode(
+    program: Vec<i64>,
+    input: &Option<&mut Receiver<i64>>,
+    output: &Option<&mut Sender<i64>>,
+) -> Vec<i64> {
+    iter::successors(Some((program, 0, 0)), |(program, ip, relative_base)| {
+        process_opcode(program.clone(), *ip, *relative_base, input, output)
+    })
+    .last()
+    .unwrap()
+    .0
 }
 
 pub fn process_opcode(
-    program: &Vec<i32>,
+    mut program: Vec<i64>,
     ip: usize,
-    input: &mut VecDeque<i32>,
-    output: &mut VecDeque<i32>,
-) -> OpcodeResult {
+    relative_base: usize,
+    input: &Option<&mut Receiver<i64>>,
+    output: &Option<&mut Sender<i64>>,
+) -> Option<(Vec<i64>, usize, usize)> {
     //println!("{:?}", program);
     let opcode = format!("{:05}", program[ip]);
     //println!("{}, {:?}", ip, opcode);
     let mut iter = opcode.chars();
-    let _a = iter.next().unwrap();
+    let a = iter.next().unwrap();
     let b = iter.next().unwrap();
     let c = iter.next().unwrap();
     match &opcode.as_bytes()[3..5] {
         b"01" => {
-            let x = get_value(program, ip + 1, c);
-            let y = get_value(program, ip + 2, b);
-            let z = program[ip + 3] as usize;
-            let next = [&program[..z], &program[z + 1..]].join(&(x + y));
-            OpcodeResult::Next((next, ip + 4))
+            //println!("{} {:?}", opcode, &program[ip..ip + 4]);
+            let x = get_value(&mut program, ip + 1, c, relative_base);
+            let y = get_value(&mut program, ip + 2, b, relative_base);
+            let z = get_address(&mut program, ip + 3, a, relative_base);
+            grow(&mut program, z, 0);
+            let next = [&program[..z], &program.get(z + 1..).unwrap_or(&[])].join(&(x + y));
+            Some((next, ip + 4, relative_base))
         }
         b"02" => {
-            let x = get_value(program, ip + 1, c);
-            let y = get_value(program, ip + 2, b);
-            let z = program[ip + 3] as usize;
-            let next = [&program[..z], &program[z + 1..]].join(&(x * y));
-            OpcodeResult::Next((next, ip + 4))
+            //println!("{} {:?}", opcode, &program[ip..ip + 4]);
+            let x = get_value(&mut program, ip + 1, c, relative_base);
+            let y = get_value(&mut program, ip + 2, b, relative_base);
+            let z = get_address(&mut program, ip + 3, a, relative_base);
+            grow(&mut program, z, 0);
+            let next = [&program[..z], &program.get(z + 1..).unwrap_or(&[])].join(&(x * y));
+            Some((next, ip + 4, relative_base))
         }
-        b"03" => match input.pop_front() {
-            Some(i) => {
-                let x = program[ip + 1] as usize;
-                let next = [&program[..x], &program[x + 1..]].join(&i);
-                OpcodeResult::Next((next, ip + 2))
-            }
-            None => OpcodeResult::Blocked,
-        },
+        b"03" => {
+            //println!("{} {:?}", opcode, &program[ip..ip + 4]);
+            let i = input.as_ref().unwrap().recv().unwrap();
+            //println!("{} received {}", std::thread::current().name().unwrap(), i);
+            let x = get_address(&mut program, ip + 1, c, relative_base);
+            let next = [&program[..x], &program[x + 1..]].join(&i);
+            Some((next, ip + 2, relative_base))
+        }
         b"04" => {
-            let x = get_value(program, ip + 1, c);
-            output.push_back(x);
-            OpcodeResult::Next((program.clone(), ip + 2))
+            //println!("{} {:?}", opcode, &program[ip..ip + 2]);
+            let x = get_value(&mut program, ip + 1, c, relative_base);
+            //println!("{} sent {}", std::thread::current().name().unwrap_or("thread"), x);
+            output.as_ref().unwrap().send(x);
+            Some((program.clone(), ip + 2, relative_base))
         }
         b"05" => {
-            let x = get_value(program, ip + 1, c);
+            //println!("{} {:?}", opcode, &program[ip..ip + 3]);
+            let x = get_value(&mut program, ip + 1, c, relative_base);
             if x != 0 {
-                let y = get_value(program, ip + 2, b) as usize;
-                OpcodeResult::Next((program.clone(), y))
+                let y = get_value(&mut program, ip + 2, b, relative_base) as usize;
+                Some((program.clone(), y, relative_base))
             } else {
-                OpcodeResult::Next((program.clone(), ip + 3))
+                Some((program.clone(), ip + 3, relative_base))
             }
         }
         b"06" => {
-            let x = get_value(program, ip + 1, c);
+            //println!("{} {:?}", opcode, &program[ip..ip + 3]);
+            let x = get_value(&mut program, ip + 1, c, relative_base);
             if x == 0 {
-                let y = get_value(program, ip + 2, b) as usize;
-                OpcodeResult::Next((program.clone(), y))
+                let y = get_value(&mut program, ip + 2, b, relative_base) as usize;
+                Some((program.clone(), y, relative_base))
             } else {
-                OpcodeResult::Next((program.clone(), ip + 3))
+                Some((program.clone(), ip + 3, relative_base))
             }
         }
         b"07" => {
-            let x = get_value(program, ip + 1, c);
-            let y = get_value(program, ip + 2, b);
-            let z = program[ip + 3] as usize;
-            let next = [&program[..z], &program[z + 1..]].join(&((x < y) as i32));
-            OpcodeResult::Next((next, ip + 4))
+            //println!("{} {:?}", opcode, &program[ip..ip + 4]);
+            let x = get_value(&mut program, ip + 1, c, relative_base);
+            let y = get_value(&mut program, ip + 2, b, relative_base);
+            let z = get_address(&mut program, ip + 3, a, relative_base);
+            let next = [&program[..z], &program[z + 1..]].join(&((x < y) as i64));
+            Some((next, ip + 4, relative_base))
         }
         b"08" => {
-            let x = get_value(program, ip + 1, c);
-            let y = get_value(program, ip + 2, b);
-            let z = program[ip + 3] as usize;
-            let next = [&program[..z], &program[z + 1..]].join(&((x == y) as i32));
-            OpcodeResult::Next((next, ip + 4))
+            //println!("{} {:?}", opcode, &program[ip..ip + 4]);
+            let x = get_value(&mut program, ip + 1, c, relative_base);
+            let y = get_value(&mut program, ip + 2, b, relative_base);
+            let z = get_address(&mut program, ip + 3, a, relative_base);
+            let next = [&program[..z], &program[z + 1..]].join(&((x == y) as i64));
+            Some((next, ip + 4, relative_base))
         }
-        b"99" => OpcodeResult::Halt,
+        b"09" => {
+            //println!("{} {:?}", opcode, &program[ip..ip + 2]);
+            let x = get_value(&mut program, ip + 1, c, relative_base);
+            Some((
+                program.clone(),
+                ip + 2,
+                ((relative_base as i64) + x) as usize,
+            ))
+        }
+        b"99" => None,
         _ => panic!(),
     }
 }
 
-fn get_value(program: &Vec<i32>, ip: usize, mode: char) -> i32 {
+fn get_value(mut program: &mut Vec<i64>, ip: usize, mode: char, relative_base: usize) -> i64 {
+    let ip = get_address(program, ip, mode, relative_base);
+    grow(&mut program, ip + 1, 0);
+    program[ip]
+}
+
+fn get_address(program: &Vec<i64>, ip: usize, mode: char, relative_base: usize) -> usize {
     if mode == '0' {
-        program[program[ip] as usize]
+        program[ip] as usize
+    } else if mode == '2' {
+        (relative_base as i64 + program[ip as usize]) as usize
     } else {
-        program[ip]
+        ip
+    }
+}
+
+fn grow(v: &mut Vec<i64>, new_len: usize, value: i64) {
+    if new_len > v.len() {
+        v.resize(new_len, value);
     }
 }
